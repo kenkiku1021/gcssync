@@ -1,2 +1,7 @@
 # gcssync
-Google Cloud Storage data sync
+Sync Google Cloud Storage data
+
+## usage
+
+### Environment Variables
+
