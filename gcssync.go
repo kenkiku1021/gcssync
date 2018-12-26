@@ -6,7 +6,17 @@ import (
     //"log"
 )
 
+func usage() {
+    fmt.Println("Usage:")
+    fmt.Println("gcssync local_path gs://[backet name]/path")
+}
+
 func main() {
+    if len(os.Args) < 3 {
+        usage()
+        os.Exit(1)
+    }
+    
     hasError := false
     cred := os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")
     projId := os.Getenv("GOOGLE_PROJECT_ID")
