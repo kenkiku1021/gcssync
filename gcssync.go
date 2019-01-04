@@ -6,13 +6,22 @@ import (
     //"log"
 )
 
+var (
+    Version string
+)
+
 func usage() {
     fmt.Println("Usage:")
     fmt.Println("gcssync local_path gs://[backet name]/path")
 }
 
+func version() {
+    fmt.Println("gcssync version: " + Version)
+}
+
 func main() {
     if len(os.Args) < 3 {
+        version()
         usage()
         os.Exit(1)
     }
