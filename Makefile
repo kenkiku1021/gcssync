@@ -19,6 +19,7 @@ install:
 .PHONY: clean
 clean:
 	rm -rf bin/*
+	rm -rf dist/*
 
 .PHONY: cross-build
 cross-build: deps
