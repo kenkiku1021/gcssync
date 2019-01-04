@@ -3,7 +3,7 @@ package main
 import (
     "crypto/md5"
     "bytes"
-    //"fmt"
+    "fmt"
     "context"
     "errors"
     "io"
@@ -13,6 +13,12 @@ import (
     "strings"
     "cloud.google.com/go/storage"
 )
+
+const MAX_GOROUTINE_COUNT = 4
+
+func d(s string) {
+    fmt.Fprintln(os.Stderr, s)
+}
 
 func getBucketName(s string) (string, string, error) {
     re := regexp.MustCompile("^gs:\\/\\/([^\\/]+)\\/(.*)$")
@@ -29,6 +35,11 @@ type GCSBucket struct {
     client *storage.Client
     bucket *storage.BucketHandle
     logger *log.Logger
+}
+
+type SyncInfo struct {
+    fullpath string
+    target string
 }
 
 func NewGCSBucket(bucketName string) *GCSBucket {
@@ -54,18 +65,23 @@ func NewGCSBucket(bucketName string) *GCSBucket {
 
 func (gcsBucket *GCSBucket) syncFiles(dstPath string, srcDirName string) error {
     srcDirName = strings.TrimRight(srcDirName, "/")
+    dstPath = strings.TrimRight(dstPath, "/")
     
     err := gcsBucket.deleteRemovedObjects(dstPath + "/", srcDirName)
     if err != nil {
         return err
     }
 
-    err = gcsBucket.syncFilesInternal(dstPath, srcDirName)
+    dirInfo := SyncInfo {
+        fullpath: srcDirName,
+        target: dstPath,
+    }
+    err = gcsBucket.syncFilesInternal(dirInfo)
     return err
 }
 
-func (gcsBucket *GCSBucket) syncFilesInternal(dstPath string, srcDirName string) error {
-    srcDir, err := os.Open(srcDirName)
+func (gcsBucket *GCSBucket) syncFilesInternal(dirInfo SyncInfo) error {
+    srcDir, err := os.Open(dirInfo.fullpath)
     if err != nil {
         return err
     }
@@ -74,50 +90,71 @@ func (gcsBucket *GCSBucket) syncFilesInternal(dstPath string, srcDirName string)
         return err
     }
 
+    gcsBucket.logger.Printf("syncing dir: %s -> %s", dirInfo.fullpath, dirInfo.target)
+    
+    var empty struct{}
+
+    limit := make(chan struct{}, MAX_GOROUTINE_COUNT)
     filesCount := len(files)
+    var subdirs []SyncInfo
+    gcsBucket.logger.Printf("%s : %d files", dirInfo.fullpath, filesCount)
     for i := 0; i < filesCount; i++ {
-        file := files[i]
-        fullpath := srcDirName + "/" + file.Name()
-        target := strings.TrimLeft(dstPath + "/" + file.Name(), "/")
-        if file.IsDir() {
-            err = gcsBucket.syncFiles(target, fullpath)
-            if err != nil {
-                return err
-            }
-        } else {
-            err = gcsBucket.syncFile(target, fullpath)
-            if err != nil {
-                return err
-            }
+        select {
+        case limit <- empty:
+            go func(file os.FileInfo) {
+                syncInfo := SyncInfo {
+                    fullpath: dirInfo.fullpath + "/" + file.Name(),
+                    target: strings.TrimLeft(dirInfo.target + "/" + file.Name(), "/"),
+                }
+                if file.IsDir() {
+                    subdirs = append(subdirs, syncInfo)
+                } else {
+                    err = gcsBucket.syncFile(syncInfo)
+                    if err != nil {
+                        showError(err.Error())
+                        os.Exit(1)
+                    }
+                }
+                <-limit
+            }(files[i])
+        }
+    }
+
+    subdirsCount := len(subdirs)
+    for i := 0; i < subdirsCount; i++ {
+        err = gcsBucket.syncFilesInternal(subdirs[i])
+        if err != nil {
+            showError(err.Error())
+            os.Exit(1)
         }
     }
 
     return nil
 }
 
-func (gcsBucket *GCSBucket) syncFile(targetPath, srcPath string) error {
-    targetObj := gcsBucket.bucket.Object(targetPath)
+func (gcsBucket *GCSBucket) syncFile(fileInfo SyncInfo) error {
+    targetObj := gcsBucket.bucket.Object(fileInfo.target)
     attrs, err := targetObj.Attrs(gcsBucket.ctx)
     if err == nil {
-        fileHashSum, err := md5Hash(srcPath)
+        fileHashSum, err := md5Hash(fileInfo.fullpath)
         if err != nil {
             return err
         }
         
         if bytes.Compare(fileHashSum, attrs.MD5) == 0 {
             // file is not modified
-            gcsBucket.logger.Printf("not modified: %s", srcPath)
+            gcsBucket.logger.Printf("not modified: %s", fileInfo.fullpath)
             return nil
         }
     }
 
-    f, err := os.Open(srcPath)
+    f, err := os.Open(fileInfo.fullpath)
     if err != nil {
         return err
     }
     defer f.Close()
 
-    gcsBucket.logger.Printf("upload: %s -> %s", srcPath, targetPath)
+    gcsBucket.logger.Printf("upload: %s -> %s", fileInfo.fullpath, fileInfo.target)
     wc := targetObj.NewWriter(gcsBucket.ctx)
     if _, err = io.Copy(wc, f); err != nil {
         return err
