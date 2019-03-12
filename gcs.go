@@ -9,6 +9,7 @@ import (
     "io"
     "log"
     "os"
+    "path/filepath"
     "regexp"
     "strings"
     "cloud.google.com/go/storage"
@@ -18,6 +19,28 @@ const MAX_GOROUTINE_COUNT = 4
 
 func d(s string) {
     fmt.Fprintln(os.Stderr, s)
+}
+
+func getContentType(filename string) string {
+    ext := filepath.Ext(filename)
+    switch ext {
+    case ".txt":
+        return "text/plain"
+    case ".html":
+        return "text/html"
+    case ".htm":
+        return "text/html"
+    case ".css":
+        return "text/css"
+    case ".js":
+        return "text/javascript"
+    case ".pdf":
+        return "application/pdf"
+    case ".svg":
+        return "image/svg+xml"
+    default:
+        return ""
+    }
 }
 
 func getBucketName(s string) (string, string, error) {
@@ -81,6 +104,49 @@ func (gcsBucket *GCSBucket) syncFiles(dstPath string, srcDirName string) error {
 }
 
 func (gcsBucket *GCSBucket) syncFilesInternal(dirInfo SyncInfo) error {
+    srcDir, err := os.Open(dirInfo.fullpath)
+    if err != nil {
+        return err
+    }
+    files, err := srcDir.Readdir(0)
+    if err != nil {
+        return err
+    }
+
+    gcsBucket.logger.Printf("syncing dir: %s -> %s", dirInfo.fullpath, dirInfo.target)
+    
+    filesCount := len(files)
+    var subdirs []SyncInfo
+    gcsBucket.logger.Printf("%s : %d files", dirInfo.fullpath, filesCount)
+	for i := 0; i < filesCount; i++ {
+        syncInfo := SyncInfo {
+            fullpath: dirInfo.fullpath + "/" + files[i].Name(),
+            target: strings.TrimLeft(dirInfo.target + "/" + files[i].Name(), "/"),
+        }
+        if files[i].IsDir() {
+            subdirs = append(subdirs, syncInfo)
+        } else {
+            err = gcsBucket.syncFile(syncInfo)
+            if err != nil {
+                showError(err.Error())
+                os.Exit(1)
+            }
+        }
+    }
+
+    subdirsCount := len(subdirs)
+    for i := 0; i < subdirsCount; i++ {
+        err = gcsBucket.syncFilesInternal(subdirs[i])
+        if err != nil {
+            showError(err.Error())
+            os.Exit(1)
+        }
+    }
+
+    return nil
+}
+
+func (gcsBucket *GCSBucket) syncFilesInternalGoRoutine(dirInfo SyncInfo) error {
     srcDir, err := os.Open(dirInfo.fullpath)
     if err != nil {
         return err
@@ -156,6 +222,10 @@ func (gcsBucket *GCSBucket) syncFile(fileInfo SyncInfo) error {
 
     gcsBucket.logger.Printf("upload: %s -> %s", fileInfo.fullpath, fileInfo.target)
     wc := targetObj.NewWriter(gcsBucket.ctx)
+    ct := getContentType(fileInfo.fullpath)
+    if ct != "" {
+        wc.ContentType = ct
+    }
     if _, err = io.Copy(wc, f); err != nil {
         return err
     }

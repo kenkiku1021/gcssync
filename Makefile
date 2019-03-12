@@ -1,5 +1,5 @@
 NAME	:= gcssync
-VERSION	:= 0.9.0
+VERSION	:= 0.9.2
 
 SRCS	:= $(shell find . -type f -name '*.go')
 LDFLAGS := -ldflags="-s -w -X \"main.Version=$(VERSION)\" -extldflags \"-static\""
@@ -22,7 +22,7 @@ clean:
 	rm -rf dist/*
 
 .PHONY: cross-build
-cross-build: deps
+cross-build:
 	for os in darwin linux windows; do \
 		for arch in amd64 386; do \
 			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build -a -tags netgo -installsuffix netgo $(LDFLAGS) -o dist/$$os-$$arch/$(NAME); \
