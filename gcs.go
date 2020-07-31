@@ -233,6 +233,7 @@ func (gcsBucket *GCSBucket) syncFile(fileInfo SyncInfo) error {
     ct := getContentType(fileInfo.fullpath)
     if ct != "" {
         wc.ContentType = ct
+        wc.CacheControl = "no-cache"
     }
     if _, err = io.Copy(wc, f); err != nil {
         return err
