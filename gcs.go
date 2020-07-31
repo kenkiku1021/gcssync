@@ -38,6 +38,14 @@ func getContentType(filename string) string {
         return "application/pdf"
     case ".svg":
         return "image/svg+xml"
+    case ".docx":
+        return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    case ".xlsx":
+        return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    case ".pptx":
+        return "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    case "":
+        return "application/octet-stream"
     default:
         return ""
     }

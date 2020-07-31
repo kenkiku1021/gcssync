@@ -1,5 +1,5 @@
 NAME	:= gcssync
-VERSION	:= 0.9.2
+VERSION	:= 0.9.5
 
 SRCS	:= $(shell find . -type f -name '*.go')
 LDFLAGS := -ldflags="-s -w -X \"main.Version=$(VERSION)\" -extldflags \"-static\""
