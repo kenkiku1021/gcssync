@@ -30,10 +30,14 @@ func getContentType(filename string) string {
         return "text/html"
     case ".htm":
         return "text/html"
+    case ".xhtml":
+        return "application/xhtml+xml"
     case ".css":
         return "text/css"
     case ".js":
         return "text/javascript"
+    case ".json":
+        return "application/json"
     case ".pdf":
         return "application/pdf"
     case ".svg":
